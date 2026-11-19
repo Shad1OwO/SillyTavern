@@ -1119,7 +1119,14 @@ export async function initPresetManager() {
         }
 
         const fileName = file.name.replace('.json', '').replace('.settings', '');
-        const data = await parseJsonFile(file);
+        let data;
+        try {
+            data = await parseJsonFile(file);
+        } catch (error) {
+            toastr.error(String(error?.message ?? error), t`Could not import "${file.name}"`);
+            e.target.value = null;
+            return;
+        }
         const name = data?.name ?? fileName;
         data.name = name;
 
@@ -1231,7 +1238,14 @@ export async function initPresetManager() {
             return;
         }
 
-        const data = await parseJsonFile(file);
+        let data;
+        try {
+            data = await parseJsonFile(file);
+        } catch (error) {
+            toastr.error(String(error?.message ?? error), t`Could not import "${file.name}"`);
+            e.target.value = null;
+            return;
+        }
         const fileName = file.name.replace('.json', '');
         await PresetManager.performMasterImport(data, fileName);
         e.target.value = null;

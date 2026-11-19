@@ -3,6 +3,17 @@ import { testSetup } from './frontent-test-utils.js';
 
 const LORE_NAMES = ['MULTI_IMPORT_LORE_A', 'MULTI_IMPORT_LORE_B'];
 const CHAR_NAMES = ['Multi Import Char A', 'Multi Import Char B'];
+const EXTRA_LORE_NAMES = ['MULTI_IMPORT_LORE_OK', 'MULTI_IMPORT_LORE_HTML', 'MULTI_IMPORT_LORE_NAMED'];
+const HTML_PAGE = '<!doctype html><html><head><title>Oops</title></head><body>Something went wrong.</body></html>';
+
+/**
+ * Builds a Chub-style lorebook payload with a top-level name.
+ * @param {string} name Lorebook name
+ * @returns {object} Lorebook JSON
+ */
+function makeNamedLorebook(name) {
+    return { name, description: 'Named lorebook', ...makeLorebook(name) };
+}
 
 /**
  * Builds a minimal native SillyTavern lorebook payload.
@@ -88,7 +99,7 @@ async function cleanup(page) {
             }
         }
         await getCharacters();
-    }, { loreNames: LORE_NAMES, charNames: CHAR_NAMES });
+    }, { loreNames: [...LORE_NAMES, ...EXTRA_LORE_NAMES], charNames: CHAR_NAMES });
 }
 
 /**
@@ -191,6 +202,74 @@ test.describe('Multi Import', () => {
             await updateWorldInfoList();
             return world_names.filter(name => names.includes(name)).length;
         }, CHAR_NAMES);
+        expect(loreCount).toBe(0);
+    });
+
+    test('reports a failed file with name and reason, and still imports the rest', async ({ page }) => {
+        const goodName = 'MULTI_IMPORT_LORE_OK';
+        const badName = 'MULTI_IMPORT_LORE_HTML';
+
+        await page.locator('#world_import_file').setInputFiles([
+            { name: `${badName}.json`, mimeType: 'application/json', buffer: Buffer.from(HTML_PAGE) },
+            { name: `${goodName}.json`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(makeLorebook(goodName))) },
+        ]);
+
+        // An error toast must name the failed file and explain why
+        await expect.poll(async () => {
+            return await page.evaluate(() => {
+                const toasts = Array.from(document.querySelectorAll('.toast-error'));
+                return toasts.map(toast => toast.textContent).join('\n');
+            });
+        }, { timeout: 15000, message: 'Expected an error toast for the invalid file' }).toContain(badName);
+
+        const toastText = await page.evaluate(() => {
+            const toasts = Array.from(document.querySelectorAll('.toast-error'));
+            return toasts.map(toast => toast.textContent).join('\n');
+        });
+        expect(toastText).toContain('HTML');
+
+        // The valid file in the same batch must still be imported
+        await expectLorebooks(page, [goodName]);
+
+        // The input must be cleared so the same files can be selected again
+        const inputValue = await page.locator('#world_import_file').inputValue();
+        expect(inputValue).toBe('');
+    });
+
+    test('imports dropped lorebooks that carry a top-level name (Chub format)', async ({ page }) => {
+        const name = 'MULTI_IMPORT_LORE_NAMED';
+        const dataTransfer = await page.evaluateHandle((payload) => {
+            const dt = new DataTransfer();
+            dt.items.add(new File([JSON.stringify(payload.json)], `${payload.name}.json`, { type: 'application/json' }));
+            return dt;
+        }, { name, json: makeNamedLorebook(name) });
+
+        await page.dispatchEvent('body', 'drop', { dataTransfer });
+        await expectLorebooks(page, [name]);
+    });
+
+    test('reports a dropped HTML file as a failed import with its name', async ({ page }) => {
+        const badName = 'MULTI_IMPORT_LORE_HTML';
+        const dataTransfer = await page.evaluateHandle((payload) => {
+            const dt = new DataTransfer();
+            dt.items.add(new File([payload.html], `${payload.name}.json`, { type: 'application/json' }));
+            return dt;
+        }, { name: badName, html: HTML_PAGE });
+
+        await page.dispatchEvent('body', 'drop', { dataTransfer });
+
+        await expect.poll(async () => {
+            return await page.evaluate(() => {
+                const toasts = Array.from(document.querySelectorAll('.toast-error'));
+                return toasts.map(toast => toast.textContent).join('\n');
+            });
+        }, { timeout: 15000, message: 'Expected an error toast naming the dropped file' }).toContain(badName);
+
+        const loreCount = await page.evaluate(async (name) => {
+            const { world_names, updateWorldInfoList } = await import('./scripts/world-info.js');
+            await updateWorldInfoList();
+            return world_names.filter(worldName => worldName === name).length;
+        }, badName);
         expect(loreCount).toBe(0);
     });
 });

@@ -5872,11 +5872,10 @@ export async function isLorebookFile(file) {
             return true;
         }
 
-        // Native SillyTavern format: entries without character card markers
+        // Native SillyTavern and Chub formats: entries without character card markers
         return jsonData.entries !== undefined
             && jsonData.spec === undefined
-            && jsonData.data === undefined
-            && jsonData.name === undefined;
+            && jsonData.data === undefined;
     } catch (error) {
         console.debug('File is not a parseable lorebook', error);
         return false;
@@ -5907,7 +5906,7 @@ export async function importWorldInfo(file) {
         }
 
         if (jsonData === undefined || jsonData === null) {
-            toastr.error(t`File is not valid: ${file.name}`);
+            toastr.error(t`The file does not contain any lorebook data`, t`Could not import "${file.name}"`);
             return;
         }
 
@@ -5929,7 +5928,15 @@ export async function importWorldInfo(file) {
             formData.append('convertedData', JSON.stringify(convertRisuLorebook(jsonData)));
         }
     } catch (error) {
-        toastr.error(`Error parsing file: ${error}`);
+        console.error('Error parsing world info file:', error);
+        let reason = String(error?.message ?? error);
+        if (error instanceof SyntaxError) {
+            const head = await file.text().catch(() => '');
+            reason = head.trimStart().startsWith('<')
+                ? t`The file is an HTML page, not a lorebook (likely a failed download)`
+                : t`The file is not valid JSON`;
+        }
+        toastr.error(reason, t`Could not import "${file.name}"`);
         return;
     }
 
@@ -5949,7 +5956,8 @@ export async function importWorldInfo(file) {
         });
 
         if (!result.ok) {
-            throw new Error(`Failed to import world info: ${result.statusText}`);
+            const errorText = await result.text().catch(() => '');
+            throw new Error(errorText || result.statusText);
         }
 
         const data = await result.json();
@@ -5966,7 +5974,7 @@ export async function importWorldInfo(file) {
         }
     } catch (error) {
         console.error('Error importing world info:', error);
-        toastr.error(t`Failed to import World Info`);
+        toastr.error(String(error?.message ?? error), t`Could not import "${file.name}"`);
     }
 }
 
@@ -6234,7 +6242,12 @@ export function initWorldInfo() {
         }
 
         for (const file of e.target.files) {
-            await importWorldInfo(file);
+            try {
+                await importWorldInfo(file);
+            } catch (error) {
+                console.error('Error importing world info:', error);
+                toastr.error(String(error?.message ?? error), t`Could not import "${file.name}"`);
+            }
         }
 
         // Will allow to select the same file twice in a row

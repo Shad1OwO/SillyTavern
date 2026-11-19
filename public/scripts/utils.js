@@ -498,13 +498,19 @@ export function getBase64Async(file) {
 /**
  * Parses a file blob as a JSON object.
  * @param {Blob} file The file to read.
- * @returns {Promise<any>} A promise that resolves to the parsed JSON object.
+ * @returns {Promise<any>} A promise that resolves to the parsed JSON object, or rejects if the file cannot be read or is not valid JSON.
  */
 export async function parseJsonFile(file) {
     return new Promise((resolve, reject) => {
         const fileReader = new FileReader();
         fileReader.readAsText(file);
-        fileReader.onload = event => resolve(JSON.parse(String(event.target.result)));
+        fileReader.onload = event => {
+            try {
+                resolve(JSON.parse(String(event.target.result)));
+            } catch (error) {
+                reject(error);
+            }
+        };
         fileReader.onerror = error => reject(error);
     });
 }

@@ -4898,7 +4898,14 @@ async function onLogitBiasPresetImportFileChange(e) {
     }
 
     const name = file.name.replace(/\.[^/.]+$/, '');
-    const importedFile = await parseJsonFile(file);
+    let importedFile;
+    try {
+        importedFile = await parseJsonFile(file);
+    } catch (error) {
+        toastr.error(String(error?.message ?? error), t`Could not import "${file.name}"`);
+        e.target.value = '';
+        return;
+    }
     e.target.value = '';
 
     if (name in oai_settings.bias_presets) {

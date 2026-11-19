@@ -10600,7 +10600,7 @@ async function importCharacter(file, { preserveFileName = '', importTags = false
         }
     } catch (error) {
         console.error('Error importing character', error);
-        toastr.error(t`The file is likely invalid or corrupted.`, t`Could not import character`);
+        toastr.error(t`The file is likely invalid or corrupted: ${file.name}`, t`Could not import character`);
     }
 }
 

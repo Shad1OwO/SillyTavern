@@ -1816,7 +1816,13 @@ async function onTagRestoreFileSelect(e) {
         return;
     }
 
-    const data = await parseJsonFile(file);
+    let data;
+    try {
+        data = await parseJsonFile(file);
+    } catch (error) {
+        toastr.error(String(error?.message ?? error), t`Could not import "${file.name}"`);
+        return;
+    }
 
     if (!data) {
         toastr.warning('Empty file data', 'Tag Restore');
