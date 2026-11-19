@@ -49,6 +49,8 @@ import {
     initWorldInfo,
     charUpdatePrimaryWorld,
     charSetAuxWorlds,
+    importWorldInfo,
+    isLorebookFile,
 } from './scripts/world-info.js';
 
 import {
@@ -10458,9 +10460,11 @@ export async function swipe_right(event = null, { source, repeated, message } = 
  * Imports supported files dropped into the app window.
  * @param {File[]} files Array of files to process
  * @param {Map<File, string>} [data] Extra data to pass to the import function
+ * @param {object} [options] Additional options
+ * @param {boolean} [options.allowLorebooks=false] Whether to import lorebook files as World Info instead of characters
  * @returns {Promise<void>}
  */
-export async function processDroppedFiles(files, data = new Map()) {
+export async function processDroppedFiles(files, data = new Map(), { allowLorebooks = false } = {}) {
     const allowedMimeTypes = [
         'application/json',
         'image/png',
@@ -10479,6 +10483,11 @@ export async function processDroppedFiles(files, data = new Map()) {
     for (const file of files) {
         const extension = file.name.split('.').pop().toLowerCase();
         if (allowedMimeTypes.some(x => file.type.startsWith(x)) || allowedExtensions.includes(extension)) {
+            if (allowLorebooks && ['json', 'lorebook'].includes(extension) && await isLorebookFile(file)) {
+                await importWorldInfo(file);
+                continue;
+            }
+
             const preservedName = data instanceof Map && data.get(file);
             const avatarFileName = await importCharacter(file, { preserveFileName: preservedName });
             if (avatarFileName !== undefined) {
@@ -12559,7 +12568,7 @@ jQuery(async function () {
         if (!files.length) {
             await importFromURL(event.originalEvent.dataTransfer.items, files);
         }
-        await processDroppedFiles(files);
+        await processDroppedFiles(files, new Map(), { allowLorebooks: true });
     }, { noAnimation: true });
 
     chatDragDropHandler = new DragAndDropHandler('#select_chat_popup', async (_, event) => {

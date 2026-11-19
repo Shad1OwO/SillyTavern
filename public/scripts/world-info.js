@@ -5844,6 +5844,46 @@ export function onWorldInfoChange(args, text) {
 }
 
 /**
+ * Checks if a file contains lorebook (World Info) data rather than a character card.
+ * Recognizes native SillyTavern, NovelAI, Agnai and Risu lorebook formats.
+ * @param {File} file File to check
+ * @returns {Promise<boolean>} True if the file is a lorebook
+ */
+export async function isLorebookFile(file) {
+    try {
+        const jsonData = await parseJsonFile(file);
+
+        if (!jsonData || typeof jsonData !== 'object') {
+            return false;
+        }
+
+        // NovelAI lorebook
+        if (jsonData.lorebookVersion !== undefined) {
+            return true;
+        }
+
+        // Agnai memory book
+        if (jsonData.kind === 'memory') {
+            return true;
+        }
+
+        // Risu lorebook
+        if (jsonData.type === 'risu') {
+            return true;
+        }
+
+        // Native SillyTavern format: entries without character card markers
+        return jsonData.entries !== undefined
+            && jsonData.spec === undefined
+            && jsonData.data === undefined
+            && jsonData.name === undefined;
+    } catch (error) {
+        console.debug('File is not a parseable lorebook', error);
+        return false;
+    }
+}
+
+/**
  * Imports world info from a file.
  * @param {File} file File to import
  */
@@ -6193,9 +6233,9 @@ export function initWorldInfo() {
             return;
         }
 
-        const file = e.target.files[0];
-
-        await importWorldInfo(file);
+        for (const file of e.target.files) {
+            await importWorldInfo(file);
+        }
 
         // Will allow to select the same file twice in a row
         e.target.value = '';
