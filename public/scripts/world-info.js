@@ -994,8 +994,8 @@ export function setWorldInfoSettings(settings, data) {
 
     world_names = data.world_names?.length ? data.world_names : [];
 
-    // Add to existing selected WI if it exists
-    selected_world_info = selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []);
+    // Add to existing selected WI if it exists (deduplicated: duplicate books double-count entries against the token budget)
+    selected_world_info = [...new Set(selected_world_info.concat(settings.world_info?.globalSelect?.filter((e) => world_names.includes(e)) ?? []))];
 
     if (world_names.length > 0) {
         $('#world_info').empty();
@@ -2055,6 +2055,7 @@ export async function loadWorldInfo(name) {
         return data;
     }
 
+    console.warn(`[WI] Failed to load world info "${name}": ${response.status} ${response.statusText}`);
     return null;
 }
 
@@ -2080,6 +2081,10 @@ export async function updateWorldInfoList() {
             $('#world_info').append(globalListOption);
             $('#world_editor_select').append(editorListOption);
         });
+
+        // Refresh the select2 display only; the namespaced event does not re-run the app change handlers
+        $('#world_info').trigger('change.select2');
+        $('#world_editor_select').trigger('change.select2');
     }
 }
 
@@ -5804,6 +5809,10 @@ export function onWorldInfoChange(args, text) {
                         }
                         case 'on':
                         default: {
+                            if (selected_world_info.includes(name)) {
+                                if (!silent) toastr.info(t`World already active: ${name}`);
+                                break;
+                            }
                             selected_world_info.push(name);
                             wiElement.prop('selected', true);
                             if (!silent) toastr.success(t`Activated world: ${name}`);
@@ -5821,8 +5830,13 @@ export function onWorldInfoChange(args, text) {
         }
     } else { //if it's a pointer selection
         const tempWorldInfo = [];
-        const val = $('#world_info').val();
-        const selectedWorlds = (Array.isArray(val) ? val : [val]).map((e) => Number(e)).filter((e) => !isNaN(e));
+        const val = $('#world_info').val() ?? [];
+        // Filter out null/empty values before converting to numbers: Number(null) and Number('') are 0,
+        // which would silently activate the first world in the list when nothing is selected
+        const selectedWorlds = (Array.isArray(val) ? val : [val])
+            .filter((e) => e !== null && e !== undefined && e !== '')
+            .map((e) => Number(e))
+            .filter((e) => Number.isInteger(e) && e >= 0);
         if (selectedWorlds.length > 0) {
             selectedWorlds.forEach((worldIndex) => {
                 const existingWorldName = world_names[worldIndex];
@@ -6221,10 +6235,17 @@ function updateAuxBooks(fileName, computeNext) {
 }
 
 export function initWorldInfo() {
-    $('#world_info').on('mousedown change', async function (e) {
-        // If there's no world names, don't do anything
+    $('#world_info').on('mousedown', function (e) {
+        // If there's no world names, don't allow interaction
         if (world_names.length === 0) {
             e.preventDefault();
+        }
+    });
+
+    // Handle selection on 'change' only: on 'mousedown' the browser has not applied
+    // the click to the selection yet, so reading the value there captures a stale state
+    $('#world_info').on('change', function () {
+        if (world_names.length === 0) {
             return;
         }
 

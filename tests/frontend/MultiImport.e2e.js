@@ -3,7 +3,7 @@ import { testSetup } from './frontent-test-utils.js';
 
 const LORE_NAMES = ['MULTI_IMPORT_LORE_A', 'MULTI_IMPORT_LORE_B'];
 const CHAR_NAMES = ['Multi Import Char A', 'Multi Import Char B'];
-const EXTRA_LORE_NAMES = ['MULTI_IMPORT_LORE_OK', 'MULTI_IMPORT_LORE_HTML', 'MULTI_IMPORT_LORE_NAMED'];
+const EXTRA_LORE_NAMES = ['MULTI_IMPORT_LORE_OK', 'MULTI_IMPORT_LORE_HTML', 'MULTI_IMPORT_LORE_NAMED', 'MULTI_IMPORT_OVERWRITE'];
 const HTML_PAGE = '<!doctype html><html><head><title>Oops</title></head><body>Something went wrong.</body></html>';
 
 /**
@@ -232,8 +232,7 @@ test.describe('Multi Import', () => {
         await expectLorebooks(page, [goodName]);
 
         // The input must be cleared so the same files can be selected again
-        const inputValue = await page.locator('#world_import_file').inputValue();
-        expect(inputValue).toBe('');
+        await expect(page.locator('#world_import_file')).toHaveValue('');
     });
 
     test('imports dropped lorebooks that carry a top-level name (Chub format)', async ({ page }) => {
@@ -246,6 +245,14 @@ test.describe('Multi Import', () => {
 
         await page.dispatchEvent('body', 'drop', { dataTransfer });
         await expectLorebooks(page, [name]);
+
+        // A named lorebook must not be misimported as a character
+        const charCount = await page.evaluate(async (name) => {
+            const { characters, getCharacters } = await import('./script.js');
+            await getCharacters();
+            return characters.filter(c => c.name === name).length;
+        }, name);
+        expect(charCount).toBe(0);
     });
 
     test('reports a dropped HTML file as a failed import with its name', async ({ page }) => {
@@ -271,5 +278,61 @@ test.describe('Multi Import', () => {
             return world_names.filter(worldName => worldName === name).length;
         }, badName);
         expect(loreCount).toBe(0);
+    });
+
+    test('re-importing a lorebook with an existing name keeps the book and its new content', async ({ page }) => {
+        const name = 'MULTI_IMPORT_OVERWRITE';
+
+        const result = await page.evaluate(async (name) => {
+            const wi = await import('./scripts/world-info.js');
+            const { getRequestHeaders } = await import('./script.js');
+            const { Popup, POPUP_RESULT } = await import('./scripts/popup.js');
+
+            const makeFile = (content) => new File(
+                [JSON.stringify({ entries: { '0': { uid: 0, key: ['overwrite'], content } } })],
+                `${name}.json`,
+                { type: 'application/json' },
+            );
+
+            const originalConfirm = Popup.show.confirm;
+            let confirmCalls = 0;
+            try {
+                await wi.updateWorldInfoList();
+                if (wi.world_names.includes(name)) {
+                    await wi.deleteWorldInfo(name);
+                }
+
+                Popup.show.confirm = async () => {
+                    confirmCalls++;
+                    return POPUP_RESULT.AFFIRMATIVE;
+                };
+
+                await wi.importWorldInfo(makeFile('first version'));
+                await wi.importWorldInfo(makeFile('second version'));
+
+                await wi.updateWorldInfoList();
+                const exists = wi.world_names.includes(name);
+
+                // Read from the server directly to bypass the client-side cache
+                const response = await fetch('/api/worldinfo/get', {
+                    method: 'POST',
+                    headers: getRequestHeaders(),
+                    body: JSON.stringify({ name }),
+                });
+                const data = response.ok ? await response.json() : null;
+
+                return { exists, confirmCalls, content: data?.entries?.['0']?.content ?? null };
+            } finally {
+                Popup.show.confirm = originalConfirm;
+                await wi.updateWorldInfoList();
+                if (wi.world_names.includes(name)) {
+                    await wi.deleteWorldInfo(name);
+                }
+            }
+        }, name);
+
+        expect(result.confirmCalls).toBe(1);
+        expect(result.exists).toBe(true);
+        expect(result.content).toBe('second version');
     });
 });

@@ -10477,6 +10477,8 @@ export async function processDroppedFiles(files, data = new Map(), { allowLorebo
     const allowedExtensions = [
         'charx',
         'byaf',
+        'json',
+        'lorebook',
     ];
 
     const avatarFileNames = [];
